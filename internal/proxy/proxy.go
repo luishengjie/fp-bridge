@@ -22,7 +22,7 @@ var protectedHeaders = []string{
 
 func removeProtectedHeaders(header http.Header) {
 	for _, name := range protectedHeaders {
-		header.Del((name))
+		header.Del(name)
 	}
 }
 

@@ -4,19 +4,20 @@
 package main
 
 import (
+	"context"
+	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"net/url"
-	"time"
-
-	"context"
-	"crypto/tls"
-	"errors"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/luishengjie/fp-bridge/internal/config"
+	"github.com/luishengjie/fp-bridge/internal/forwarding"
+	"github.com/luishengjie/fp-bridge/internal/ingest"
 	"github.com/luishengjie/fp-bridge/internal/network"
 	"github.com/luishengjie/fp-bridge/internal/proxy"
 	"github.com/wi1dcard/fingerproxy/pkg/proxyserver"
@@ -51,38 +52,29 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func newNetworkDebugHandler(
-	provider network.Provider,
-) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		metadata, err := provider.FromRequest(r)
-		if err != nil {
-			http.Error(
-				w,
-				err.Error(),
-				http.StatusInternalServerError,
-			)
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		if err := json.NewEncoder(w).Encode(metadata); err != nil {
-			log.Printf("encode network metadata: %v", err)
-		}
-
-	}
-}
-
 // Create the Router
-func newHandler(upstream *url.URL) http.Handler {
+func newHandler(
+	upstream *url.URL,
+	eventEndpoint *url.URL,
+	httpClient *http.Client,
+) http.Handler {
 	mux := http.NewServeMux()
 	networkProvider := network.NewFingerproxyProvider()
+	eventForwarder := forwarding.NewHTTPForwarder(
+		eventEndpoint,
+		httpClient,
+	)
+
+	ingestHandler := ingest.NewHandler(
+		networkProvider,
+		eventForwarder,
+	)
 
 	mux.HandleFunc("/health", healthHandler) // Route registered for GET request
-	mux.HandleFunc(
-		"GET /debug/network",
-		newNetworkDebugHandler(networkProvider),
+
+	mux.Handle(
+		"/v1/events",
+		ingestHandler,
 	)
 
 	mux.Handle("/", proxy.New(upstream))
@@ -125,7 +117,11 @@ func main() {
 	// Create a new proxy server
 	server := proxyserver.NewServer(
 		ctx,
-		newHandler(cfg.Upstream),
+		newHandler(
+			cfg.Upstream,
+			cfg.EventEndpoint,
+			&http.Client{Timeout: 5 * time.Second},
+		),
 		tlsConfig,
 	)
 
@@ -136,9 +132,10 @@ func main() {
 	server.TLSHandshakeTimeout = 10 * time.Second
 
 	log.Printf(
-		"FPBridge listening on %s and forwarding to %s",
+		"FPBridge listening on %s, proxying to %s, forwarding events to %s",
 		cfg.ListenAddress,
 		cfg.Upstream,
+		cfg.EventEndpoint,
 	)
 
 	if err := server.ListenAndServe(cfg.ListenAddress); err != nil &&

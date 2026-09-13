@@ -19,6 +19,27 @@ func testUpstreamURL(t *testing.T) *url.URL {
 	return upstream
 }
 
+func testEventEndpointURL(t *testing.T) *url.URL {
+	t.Helper()
+
+	endpoint, err := url.Parse("http://127.0.0.1:9100/events")
+	if err != nil {
+		t.Fatalf("parse test event endpoint: %v", err)
+	}
+
+	return endpoint
+}
+
+func testHandler(t *testing.T) http.Handler {
+	t.Helper()
+
+	return newHandler(
+		testUpstreamURL(t),
+		testEventEndpointURL(t),
+		&http.Client{},
+	)
+}
+
 func TestHealth(t *testing.T) {
 	// Creates a fake request
 	request := httptest.NewRequest(
@@ -29,7 +50,7 @@ func TestHealth(t *testing.T) {
 	// Creates a fake resposne writer
 	recorder := httptest.NewRecorder()
 	// Sends fake request through the router
-	newHandler(testUpstreamURL(t)).ServeHTTP(recorder, request)
+	testHandler(t).ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf(
@@ -64,7 +85,7 @@ func TestHealthRejectsPost(t *testing.T) {
 
 	recorder := httptest.NewRecorder()
 
-	newHandler(testUpstreamURL(t)).ServeHTTP(recorder, request)
+	testHandler(t).ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusMethodNotAllowed {
 		t.Fatalf(
