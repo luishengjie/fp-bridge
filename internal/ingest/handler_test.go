@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/luishengjie/fp-bridge/internal/event"
+	"github.com/luishengjie/fp-bridge/internal/forwarding"
 	"github.com/luishengjie/fp-bridge/internal/network"
 )
 
@@ -25,14 +26,18 @@ func (f fakeNetworkProvider) FromRequest(_ *http.Request) (network.Metadata, err
 
 type fakeForwarder struct {
 	received event.Event
+	result   forwarding.Result
 	err      error
 	called   bool
 }
 
-func (f *fakeForwarder) Forward(_ context.Context, linkedEvent event.Event) error {
+func (f *fakeForwarder) Forward(
+	_ context.Context,
+	linkedEvent event.Event,
+) (forwarding.Result, error) {
 	f.called = true
 	f.received = linkedEvent
-	return f.err
+	return f.result, f.err
 }
 
 func TestHandlerLinksAndForwardsEvent(t *testing.T) {
@@ -87,9 +92,6 @@ func TestHandlerLinksAndForwardsEvent(t *testing.T) {
 	var responseBody response
 	if err := json.NewDecoder(recorder.Body).Decode(&responseBody); err != nil {
 		t.Fatalf("decode response: %v", err)
-	}
-	if !responseBody.Accepted {
-		t.Error("accepted = false, want true")
 	}
 	if responseBody.EventID != forwarder.received.EventID {
 		t.Errorf("response event ID = %q, want %q", responseBody.EventID, forwarder.received.EventID)
@@ -168,5 +170,54 @@ func TestHandlerReturnsBadGatewayWhenForwardingFails(t *testing.T) {
 	}
 	if !forwarder.called {
 		t.Error("forwarder was not called")
+	}
+}
+
+func TestHandlerReturnsArbitraryBackendResult(t *testing.T) {
+	forwarder := &fakeForwarder{
+		result: forwarding.Result{
+			Payload: json.RawMessage(`{
+				"risk": 0.87,
+				"show_captcha": true
+			}`),
+		},
+	}
+	handler := NewHandler(
+		fakeNetworkProvider{metadata: network.Metadata{JA4: "test-ja4"}},
+		forwarder,
+	)
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"https://example.com/v1/events",
+		strings.NewReader(`{
+			"schema_version":"1.0",
+			"collector":{"name":"fpscanner","version":"1.0.8"},
+			"payload":{}
+		}`),
+	)
+	recorder := httptest.NewRecorder()
+
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+
+	var responseBody response
+	if err := json.NewDecoder(recorder.Body).Decode(&responseBody); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if responseBody.Result == nil {
+		t.Fatal("result = nil, want backend result")
+	}
+	var backendResult struct {
+		Risk        float64 `json:"risk"`
+		ShowCaptcha bool    `json:"show_captcha"`
+	}
+	if err := json.Unmarshal(responseBody.Result, &backendResult); err != nil {
+		t.Fatalf("decode backend result: %v", err)
+	}
+	if backendResult.Risk != 0.87 || !backendResult.ShowCaptcha {
+		t.Errorf("result = %#v, want arbitrary backend fields", backendResult)
 	}
 }

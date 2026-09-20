@@ -35,7 +35,7 @@ type Request struct {
 }
 
 type Event struct {
-	// Final output created by FP-Bridge
+	// Final output created by FPBridge
 	SchemaVersion string             `json:"schema_version"`
 	EventID       string             `json:"event_id"`
 	ObservedAt    time.Time          `json:"observed_at"`

@@ -12,8 +12,8 @@ import (
 )
 
 type response struct {
-	Accepted bool   `json:"accepted"`
-	EventID  string `json:"event_id"`
+	EventID string          `json:"event_id"`
+	Result  json.RawMessage `json:"result,omitempty"`
 }
 
 type Handler struct {
@@ -74,7 +74,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 
-	if err := h.forwarder.Forward(r.Context(), linkedEvent); err != nil {
+	result, err := h.forwarder.Forward(
+		r.Context(),
+		linkedEvent,
+	)
+	if err != nil {
 		log.Printf(
 			"event forwarding failed: event_id=%s error=%v",
 			linkedEvent.EventID,
@@ -84,20 +88,23 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(
 			w,
 			"forward event",
-			http.StatusBadGateway, // 502 Bad Gateway: FP-Bridge received valid request but dev backend failed to accept it
+			http.StatusBadGateway,
 		)
 		return
 	}
-
 	log.Printf("event forwarded: event_id=%s", linkedEvent.EventID)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 
 	if err := json.NewEncoder(w).Encode(response{
-		Accepted: true,
-		EventID:  linkedEvent.EventID,
+		EventID: linkedEvent.EventID,
+		Result:  result.Payload,
 	}); err != nil {
-		return
+		log.Printf(
+			"encode response: event_id=%s error=%v",
+			linkedEvent.EventID,
+			err,
+		)
 	}
 }
