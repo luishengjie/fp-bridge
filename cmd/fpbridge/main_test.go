@@ -8,17 +8,6 @@ import (
 	"testing"
 )
 
-func testUpstreamURL(t *testing.T) *url.URL {
-	t.Helper()
-
-	upstream, err := url.Parse("http://127.0.0.1:9000")
-	if err != nil {
-		t.Fatalf("parse test upstream: %v", err)
-	}
-
-	return upstream
-}
-
 func testEventEndpointURL(t *testing.T) *url.URL {
 	t.Helper()
 
@@ -34,7 +23,6 @@ func testHandler(t *testing.T) http.Handler {
 	t.Helper()
 
 	return newHandler(
-		testUpstreamURL(t),
 		testEventEndpointURL(t),
 		&http.Client{},
 	)
@@ -92,6 +80,25 @@ func TestHealthRejectsPost(t *testing.T) {
 			"status = %d, want %d",
 			recorder.Code,
 			http.StatusMethodNotAllowed,
+		)
+	}
+}
+
+func TestUnknownRouteReturnsNotFound(t *testing.T) {
+	request := httptest.NewRequest(
+		http.MethodGet,
+		"/products",
+		nil,
+	)
+	recorder := httptest.NewRecorder()
+
+	testHandler(t).ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf(
+			"status = %d, want %d",
+			recorder.Code,
+			http.StatusNotFound,
 		)
 	}
 }

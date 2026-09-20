@@ -4,12 +4,13 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strings"
 )
 
 type Config struct {
 	ListenAddress  string
-	Upstream       *url.URL
 	EventEndpoint  *url.URL
+	AllowedOrigins []string
 	TLSCertificate string
 	TLSPrivateKey  string
 }
@@ -33,16 +34,6 @@ func Load() (Config, error) {
 		listenAddress = ":8443"
 	}
 
-	upstreamValue := os.Getenv("FPBRIDGE_UPSTREAM")
-	if upstreamValue == "" {
-		upstreamValue = "http://127.0.0.1:9000"
-	}
-
-	upstream, err := parseHTTPURL("FPBRIDGE_UPSTREAM", upstreamValue)
-	if err != nil {
-		return Config{}, err
-	}
-
 	eventEndpointValue := os.Getenv("FPBRIDGE_EVENT_ENDPOINT")
 	if eventEndpointValue == "" {
 		return Config{}, fmt.Errorf("FPBRIDGE_EVENT_ENDPOINT is required")
@@ -56,10 +47,14 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 
+	allowedOrigins := parseCommaSeparated(
+		os.Getenv("FPBRIDGE_ALLOWED_ORIGINS"),
+	)
+
 	return Config{
 		ListenAddress:  listenAddress,
-		Upstream:       upstream,
 		EventEndpoint:  eventEndpoint,
+		AllowedOrigins: allowedOrigins,
 		TLSCertificate: tlsCertificate,
 		TLSPrivateKey:  tlsPrivateKey,
 	}, nil
@@ -80,4 +75,17 @@ func parseHTTPURL(name string, value string) (*url.URL, error) {
 	}
 
 	return parsed, nil
+}
+
+func parseCommaSeparated(value string) []string {
+	var values []string
+
+	for _, item := range strings.Split(value, ",") {
+		item = strings.TrimSpace(item)
+		if item != "" {
+			values = append(values, item)
+		}
+	}
+
+	return values
 }

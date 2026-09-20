@@ -18,8 +18,8 @@ import (
 	"github.com/luishengjie/fp-bridge/internal/config"
 	"github.com/luishengjie/fp-bridge/internal/forwarding"
 	"github.com/luishengjie/fp-bridge/internal/ingest"
+	"github.com/luishengjie/fp-bridge/internal/middleware"
 	"github.com/luishengjie/fp-bridge/internal/network"
-	"github.com/luishengjie/fp-bridge/internal/proxy"
 	"github.com/wi1dcard/fingerproxy/pkg/proxyserver"
 )
 
@@ -54,7 +54,6 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 
 // Create the Router
 func newHandler(
-	upstream *url.URL,
 	eventEndpoint *url.URL,
 	httpClient *http.Client,
 ) http.Handler {
@@ -76,8 +75,6 @@ func newHandler(
 		"/v1/events",
 		ingestHandler,
 	)
-
-	mux.Handle("/", proxy.New(upstream))
 
 	return mux
 }
@@ -114,16 +111,17 @@ func main() {
 	)
 	defer stop()
 
-	// Create a new proxy server
-	server := proxyserver.NewServer(
-		ctx,
-		newHandler(
-			cfg.Upstream,
-			cfg.EventEndpoint,
-			&http.Client{Timeout: 5 * time.Second},
-		),
-		tlsConfig,
+	router := newHandler(
+		cfg.EventEndpoint,
+		&http.Client{Timeout: 5 * time.Second},
 	)
+	handler := middleware.NewCORS(
+		router,
+		cfg.AllowedOrigins,
+	)
+
+	// Create a new TLS-aware server.
+	server := proxyserver.NewServer(ctx, handler, tlsConfig)
 
 	server.HTTPServer.ReadHeaderTimeout = 5 * time.Second
 	server.HTTPServer.ReadTimeout = 10 * time.Second
@@ -132,9 +130,8 @@ func main() {
 	server.TLSHandshakeTimeout = 10 * time.Second
 
 	log.Printf(
-		"FPBridge listening on %s, proxying to %s, forwarding events to %s",
+		"FPBridge listening on %s, forwarding events to %s",
 		cfg.ListenAddress,
-		cfg.Upstream,
 		cfg.EventEndpoint,
 	)
 
