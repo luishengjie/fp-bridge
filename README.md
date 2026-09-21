@@ -1,100 +1,174 @@
-# FP-Bridge
+# FPBridge
 
-FP-Bridge is a reverse proxy that links network fingerprints with browser fingerprints at the request level. 
+FPBridge is an ingestion proxy that links browser and network fingerprints at the request level. 
 
-It allows developers to use their browser fingerprint SDK of choice and forward the combined telemetry back to their backend.
+Existing fingerprint libraries typically focus on either browser or network-level signals. However, real-world detection system benefit from combining them both. For example, an attacker may spoof browser attributes while using a non-browser HTTP client whose TLS and HTTP fingerprints are inconsistent with the reported browser identity. 
 
-## How it works
-```text
-Browser
-   │ HTTPS POST /v1/events
-   ▼
-FPBridge
-   ├── reads browser signals from the request body
-   ├── observes TLS and HTTP fingerprints
-   ├── creates a linked event
-   └── forwards it to the event endpoint
-```
-Normal website requests are forwarded to `FPBRIDGE_UPSTREAM`. Linked fingerprint events are sent to `FPBRIDGE_EVENT_ENDPOINT`.
+FPBridge provides a simple way to link browser and network signals, making them availble to the detection backend. It consists of two key modules:
+1. **FPBridge Browser**: a SDK wrapper that allows developers to use their broser fingerprint SDK of choice.
+2. **FPBridge Proxy**: a proxy that observes network fingerprints, links them with the browser signals captured by **FPBridge Browser**, and forwards them to the developer backend.
 
-## Implementation
+## Supported browser fingerprinting SDKs
 
-FP-Bridge uses [fingerproxy](https://github.com/wi1dcard/fingerproxy), licensed
-under Apache License 2.0, to capture TLS and HTTP/2 metadata and calculate JA3,
-JA4, and HTTP/2 fingerprints.
+| SDK | Adapter | Status | Payload |
+|---|---|---|---|
+| [FPScanner](https://github.com/antoinevastel/fpscanner) | `FPScannerAdapter` | Supported | FPScanner fingerprint and bot-detection signals |
+<!-- | [FingerprintJS](https://github.com/fingerprintjs/fingerprintjs) | NIL | Planned | NIL | -->
+<!-- | [BotD](https://github.com/fingerprintjs/BotD) | NIL | Planned | NIL | -->
 
-FPBridge links browser and network signals, normalizes them into a common event format, and forwards the combined event to the developer's backend.
+## Network fingerprinting
+FPBridge uses [fingerproxy](https://github.com/wi1dcard/fingerproxy) to obtain JA3, JA4, and HTTP/2 fingerprints.
+
+fingerproxy is licensed under Apache License 2.0.
 
 
 
-## Requirements
+## Quick Start
+### Dependencies
+
 - Go 1.26 or later
+- Node.js and npm
 - A TLS certificate and private key
+- [UV](https://docs.astral.sh/uv/) for example backend
 
 
-## Quick start
-
-Start example event backend:
+### Installation
+Clone the repository and install the following dependencies:
 
 ```bash
-python3 examples/backend-python/server.py
+git clone https://github.com/luishengjie/fp-bridge.git
+```
+
+```bash
+cd fp-bridge
+
+go mod download
+
+cd browser
+npm install
+npm run build
+```
+
+Install the python dependencies for the example backend:
+
+```bash
+cd examples
+uv sync
+```
+
+Install the dependencies for the example web application
+
+```bash
+cd examples/web
+npm install
+cp .env.example .env
 ```
 
 
-Start FP-Bridge:
+### FPBridge Browser
+FPBridge Browser wraps a supported browser fingerprinting SDK and submits its payload to FPBridge Proxy.
 
+```ts
+import {
+  FPBridge,
+  FPScannerAdapter,
+} from "@fpbridge/browser";
+
+interface DetectionResult {
+  action: "allow" | "challenge" | "block";
+  reason_codes: string[];
+}
+
+const bridge = new FPBridge({
+  endpoint: import.meta.env.VITE_FPBRIDGE_ENDPOINT,
+  collector: new FPScannerAdapter(),
+});
+
+const response = await bridge.collectAndSubmit<DetectionResult>();
+
+console.log(response.event_id);
+console.log(response.result);
+```
+
+### FPBridge Proxy
+The web application sends browser signals to the FPBridge Proxy endpoint configured by `VITE_FPBRIDGE_ENDPOINT`. FPBridge Proxy links those signals with the TLS and HTTP metadata observed in the same request and forwards the linked event to the detection backend configured by `FPBRIDGE_EVENT_ENDPOINT`.
+
+First, start the example detection backend:
+
+```bash
+cd examples
+uv sync
+uv run python backend/server.py
+```
+
+In another terminal, start FPBridge Proxy:
 ```bash
 FPBRIDGE_LISTEN_ADDRESS=:8443 \
-FPBRIDGE_UPSTREAM=http://127.0.0.1:9000 \
 FPBRIDGE_EVENT_ENDPOINT=http://127.0.0.1:9100/events \
+FPBRIDGE_ALLOWED_ORIGINS=http://localhost:5173 \
 FPBRIDGE_TLS_CERT=certs/localhost-cert.pem \
 FPBRIDGE_TLS_KEY=certs/localhost-key.pem \
 go run ./cmd/fpbridge
 ```
 
-| Variable | Purpose |
-|---|---|
-| `FPBRIDGE_LISTEN_ADDRESS` | HTTPS address FPBridge listens on |
-| `FPBRIDGE_UPSTREAM` | Normal website/application endpoint |
-| `FPBRIDGE_EVENT_ENDPOINT` | Backend endpoint that receives linked events |
-| `FPBRIDGE_TLS_CERT` | TLS certificate file |
-| `FPBRIDGE_TLS_KEY` | TLS private-key file |
+| Variable | Used by | Purpose | Example |
+|---|---|---|---|
+| `VITE_FPBRIDGE_ENDPOINT` | Web application | URL web application sends browser fingerprint signals | `https://localhost:8443/v1/events` |
+| `FPBRIDGE_LISTEN_ADDRESS` | FPBridge Proxy | Port FPBridge listens to | `:8443` |
+| `FPBRIDGE_EVENT_ENDPOINT` | FPBridge Proxy | URL which FPBridge Proxy sends linked events to | `http://127.0.0.1:9100/events` |
+| `FPBRIDGE_ALLOWED_ORIGINS` | FPBridge Proxy | list the websites (seperated by comma) allowed to send browser requests to FPBridge Proxy  | `http://localhost:5173` |
+| `FPBRIDGE_TLS_CERT` | FPBridge Proxy | Path to TLS certificate | `certs/localhost-cert.pem` |
+| `FPBRIDGE_TLS_KEY` | FPBridge Proxy | Path to TLS private key | `certs/localhost-key.pem` |
 
 
-Send a test event:
+Confirm that FPBridge is running:
 
 ```bash
-curl -k -i https://localhost:8443/v1/events \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "schema_version": "1.0",
-    "collected_at": "2026-09-13T10:00:00Z",
-    "collector": {
-      "name": "dummy-sdk",
-      "version": "0.1.0"
-    },
-    "payload": {
-      "fingerprint": "browser-test-123",
-      "bot": false
-    }
-  }'
+curl -k https://localhost:8443/health
 ```
 
 Expected response:
 
 ```json
 {
-  "accepted": true,
-  "event_id": "evt_..."
+  "status": "ok"
 }
 ```
 
-## Testing
+### Example Web Application
+With the example backend and FPBridge Proxy running, start the web application:
 
 ```bash
-go test ./...
-go vet ./...
+cd examples/web
+npm run dev
 ```
+
+Open [http://localhost:5173](http://localhost:5173) in a browser.
+
+The example application automatically:
+1. Runs FPScanner via **FPBridge Browser** to collect browser signals.
+2. Sends the browser signals to **FPBridge Proxy**.
+3. **FPBridge Proxy** obtains the network signals, links them with the browser signals and forwards them to the detection backend.
+4. The detection backend processes the linked event and returns the results to **FPBridge Proxy**.
+5. **FPBridge Proxy** forwards the result to the web application.
+
+**Successful response:**
+
+```json
+{
+  "event_id": "evt_123",
+  "result": {
+    "action": "allow",
+    "reason_codes": []
+  }
+}
+```
+
+The `event_id` is generated by FPBridge and `result` is defined by the backend detector.
+
+
+
+
 
 ## License
 Apache-2.0

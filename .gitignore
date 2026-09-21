@@ -39,6 +39,9 @@ __pycache__/
 # Local TLS certificates and private keys
 /certs/
 
+# Local documentation drafts
+/docs/
+
 # Browser dependencies and build output
 /browser/node_modules/
 /browser/dist/
