@@ -12,7 +12,7 @@ import (
 	"github.com/luishengjie/fp-bridge/internal/event"
 )
 
-const maxBackendResponseBytes = 64 * 1024
+const maxBackendResponseBytes = 1024 * 1024
 
 type Result struct {
 	Payload json.RawMessage
@@ -97,7 +97,7 @@ func (f *HTTPForwarder) Forward(
 	}
 
 	if len(responseBody) > maxBackendResponseBytes {
-		return Result{}, fmt.Errorf("backend response exceeds 64 KiB")
+		return Result{}, fmt.Errorf("backend response exceeds 1 MiB")
 	}
 
 	if !json.Valid(responseBody) {
