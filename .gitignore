@@ -27,9 +27,21 @@ go.work.sum
 # env file
 .env
 
+# Python bytecode
+__pycache__/
+*.py[cod]
+
 # Editor/IDE
 # .idea/
 # .vscode/
+.DS_Store
 
 # Local TLS certificates and private keys
 /certs/
+
+# Browser dependencies and build output
+/browser/node_modules/
+/browser/dist/
+/examples/web/node_modules/
+/examples/web/dist/
+/examples/.venv/
