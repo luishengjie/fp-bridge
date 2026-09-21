@@ -1,0 +1,53 @@
+:root {
+	font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+	color: #202124;
+	background: #f7f7f7;
+	font-synthesis: none;
+}
+
+body {
+	margin: 0;
+	min-width: 320px;
+	min-height: 100vh;
+	display: grid;
+	place-items: center;
+}
+
+main {
+	width: min(680px, calc(100% - 48px));
+	padding: 40px;
+	background: white;
+	border: 1px solid #e2e2e2;
+	border-radius: 12px;
+}
+
+h1 {
+	margin: 0 0 12px;
+	font-size: 2rem;
+}
+
+h2 {
+	margin-top: 32px;
+	font-size: 1rem;
+}
+
+p {
+	margin: 0;
+	color: #5f6368;
+	line-height: 1.6;
+}
+
+pre {
+	max-height: min(50vh, 480px);
+	min-height: 48px;
+	padding: 16px;
+	overflow: auto;
+	scrollbar-gutter: stable;
+	border-radius: 8px;
+	border: 1px solid #e2e2e2;
+	color: #303134;
+	background: #f8f9fa;
+	line-height: 1.5;
+	white-space: pre-wrap;
+	word-break: break-word;
+}
